@@ -5,6 +5,8 @@ import re
 
 from sqlmodel import Session
 from whisper.utils import get_writer
+
+from models.db_models import FilesMetadata
 from whisper_interface import WhisperInterface
 from indexing_interface import IndexingInterface
 
@@ -53,9 +55,8 @@ def main():
     print(process_transcription(wsp, input_file))
     index = IndexingInterface()
     session = Session(index.engine)
-    print(index.get_index(session, input_file))
-    print(index.bulk_validate(session, [input_file]))
-    index.add_to_index(session, input_file, True)
+    session.add(FilesMetadata(filename=str(input_file), processed=True))
+    session.commit()
     print(index.bulk_validate(session, [input_file]))
     print(index.get_index(session, input_file))
 

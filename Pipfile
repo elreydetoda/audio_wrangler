@@ -6,9 +6,11 @@ name = "pypi"
 [packages]
 requests = "*"
 openai-whisper = "*"
+sqlmodel = "*"
 
 [dev-packages]
 pytest = "*"
+faker = "*"
 
 [requires]
 python_version = "3.12"

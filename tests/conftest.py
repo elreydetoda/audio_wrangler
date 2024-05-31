@@ -1,7 +1,16 @@
+from dataclasses import dataclass
 from pathlib import Path
 import hashlib
+import sys
 from pytest import fixture
-from src.whisper_interface import WhisperInterface
+from sqlmodel import Session
+
+# extend the path to include the src directory
+sys.path.append(str(Path(Path(__file__).parent.parent / "src").absolute()))
+
+# pylint: disable=wrong-import-position; needed to import the classes from the src directory
+from indexing_interface import IndexingInterface
+from whisper_interface import WhisperInterface
 
 
 @fixture(scope="session")
@@ -26,6 +35,25 @@ def whisper_interface():
 def whisper_transcribed(whisper_interface, example_file):
     """Return the transcribed text from the example file using the WhisperInterface object."""
     return whisper_interface.transcribe(example_file).get("text").strip()
+
+
+@fixture
+def db():
+    """Return an IndexingInterface object with an in-memory database."""
+    return IndexingInterface(conn_str="sqlite://")
+
+
+@dataclass
+class DbObj:
+    db_obj: IndexingInterface
+    session: Session
+
+
+@fixture
+def session(db):
+    """Return a session object."""
+    with Session(db.engine) as db_session:
+        yield DbObj(db, db_session)
 
 
 @staticmethod

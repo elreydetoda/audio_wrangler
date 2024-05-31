@@ -7,8 +7,8 @@ from sqlmodel import Session
 from whisper.utils import get_writer
 
 from models.db_models import FilesMetadata
-from whisper_interface import WhisperInterface
-from indexing_interface import IndexingInterface
+from backend.whisper_interface import WhisperInterface
+from frontend.indexing_interface import IndexingInterface
 
 
 # Define the pattern

@@ -5,8 +5,9 @@ name = "pypi"
 
 [packages]
 requests = "*"
-openai-whisper = "*"
 sqlmodel = "*"
+openai-whisper = "*"
+fastapi = {extras = ["all"], version = "*"}
 
 [dev-packages]
 pytest = "*"

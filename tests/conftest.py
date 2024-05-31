@@ -9,8 +9,8 @@ from sqlmodel import Session
 sys.path.append(str(Path(Path(__file__).parent.parent / "src").absolute()))
 
 # pylint: disable=wrong-import-position; needed to import the classes from the src directory
-from indexing_interface import IndexingInterface
-from whisper_interface import WhisperInterface
+from frontend.indexing_interface import IndexingInterface
+from backend.whisper_interface import WhisperInterface
 
 
 @fixture(scope="session")

@@ -1,5 +1,6 @@
 ## Personal
 tests/assets/*.txt
+tests/assets/*.vtt
 *.db
 tmp*
 tmp**

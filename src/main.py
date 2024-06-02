@@ -4,13 +4,28 @@ from pathlib import Path
 import re
 from time import monotonic
 from argparse import ArgumentParser
+from typing import Iterable
 
 from sqlmodel import Session
 from whisper.utils import get_writer
 from textual import on
 from textual.app import App
-from textual.widgets import Header, Footer, Button, Static, Label
-from textual.containers import ScrollableContainer
+from textual.widgets import (
+    Header,
+    Footer,
+    Button,
+    Static,
+    Label,
+    ContentSwitcher,
+    DirectoryTree,
+)
+from textual.containers import (
+    ScrollableContainer,
+    Grid,
+    Container,
+    Horizontal,
+    VerticalScroll,
+)
 from textual.reactive import reactive
 
 from models.db_models import FilesMetadata
@@ -20,6 +35,29 @@ from frontend.indexing_interface import IndexingInterface
 
 # Define the pattern
 BREAK_PATTERN = re.compile(r"([Ee]-*|)(break|brake)[\W\s]*", re.IGNORECASE)
+COMMON_AUDIO_N_VIDEO_FORMATS = {
+    # https://github.com/h2non/filetype.py?tab=readme-ov-file#video
+    "3gp",
+    "mp4",
+    "m4v",
+    "mkv",
+    "webm",
+    "mov",
+    "avi",
+    "wmv",
+    "mpg",
+    "flv",
+    # https://github.com/h2non/filetype.py?tab=readme-ov-file#audio
+    "aac",
+    "mid",
+    "mp3",
+    "m4a",
+    "ogg",
+    "flac",
+    "wav",
+    "amr",
+    "aiff",
+}
 
 
 def modify_text_output(file_written: Path) -> None:
@@ -99,6 +137,15 @@ class AudioWrangler(Static):
         # yield Button("Third", variant="error", id="stop", classes="hidden")
 
 
+class AudioDirectoryTree(DirectoryTree):
+    def filter_paths(self, paths: Iterable[Path]) -> Iterable[Path]:
+        return [
+            path
+            for path in paths
+            if path.suffix.strip(".") in COMMON_AUDIO_N_VIDEO_FORMATS
+        ]
+
+
 class AudioWranglerApp(App):
 
     def __init__(self, *args, api_host: str, audio_dir: Path, **kwargs):
@@ -109,35 +156,71 @@ class AudioWranglerApp(App):
     BINDINGS = [
         # ("keybinding", "function_name", "description")
         ("d", "toggle_dark_mode", "Toggle dark mode"),
-        ("a", "add_audiowrangler", "Add"),
-        ("r", "remove_audiowrangler", "Remove"),
+        # ("a", "add_audiowrangler", "Add"),
+        # ("r", "remove_audiowrangler", "Remove"),
         # actual function needs to have a prefix of action_<above_name>
     ]
 
     CSS_PATH = "frontend/style.tcss"
+    indexer_text = reactive("Data View: Indexer")
 
     def compose(self):
         yield Header()
         yield Footer()
-        with ScrollableContainer(id="wranglers"):
-            yield Label(self._api_host)
-            yield Label(str(self._audio_dir))
-            yield AudioWrangler()
-            yield AudioWrangler()
+        with Horizontal(id="main"):
+            # with Container(id="data-wranglers"):
+            with VerticalScroll(id="wranglers"):
+                # yield Label(self._api_host)
+                # yield Label(str(self._audio_dir))
+                # yield AudioWrangler()
+                # yield AudioWrangler()
+                yield Button(
+                    "Index",
+                    id="indexer",
+                    classes="content-switcher-button",
+                )
+                yield Button(
+                    "Current Jobs",
+                    id="current-jobs",
+                    classes="content-switcher-button",
+                )
+                yield Button(
+                    "File Metadata",
+                    id="metadata",
+                    classes="content-switcher-button",
+                )
+            with ContentSwitcher(id="data-view", initial="indexer"):
+                with Horizontal(id="indexer"):
+                    yield AudioDirectoryTree(
+                        self._audio_dir, id="indexer-directory-tree"
+                    )
+                    yield Label("Data View: Indexer", id="indexer-text")
+                yield Label("Data View: Current Jobs", id="current-jobs")
+                yield Label("Data View: File Metadata", id="metadata")
 
     def action_toggle_dark_mode(self):
         self.dark = not self.dark
 
-    def action_add_audiowrangler(self):
-        audiowrangler = AudioWrangler()
-        conttainer = self.query_one("#wranglers")
-        conttainer.mount(audiowrangler)
-        audiowrangler.scroll_visible()
+    # def action_add_audiowrangler(self):
+    #     audiowrangler = AudioWrangler()
+    #     conttainer = self.query_one("#wranglers")
+    #     conttainer.mount(audiowrangler)
+    #     audiowrangler.scroll_visible()
 
-    def action_remove_audiowrangler(self):
-        wranglers = self.query(AudioWrangler)
-        if wranglers:
-            wranglers.last().remove()
+    # def action_remove_audiowrangler(self):
+    #     wranglers = self.query(AudioWrangler)
+    #     if wranglers:
+    #         wranglers.last().remove()
+    @on(Button.Pressed, ".content-switcher-button")
+    def update_content_switcher(self, event: Button.Pressed) -> None:
+        self.query_one(ContentSwitcher).current = event.button.id
+
+    @on(AudioDirectoryTree.FileSelected, "#indexer-directory-tree")
+    def start_file_processing(self, event: AudioDirectoryTree.FileSelected) -> None:
+        self.indexer_text = event.path.absolute()
+
+    def watch_indexer_text(self):
+        self.query_one("#indexer-text", Label).update(str(self.indexer_text))
 
 
 def main():

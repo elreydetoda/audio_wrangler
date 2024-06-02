@@ -9,6 +9,7 @@ sqlmodel = "*"
 openai-whisper = "*"
 fastapi = {extras = ["all"], version = "*"}
 streaming-form-data = "*"
+textual = "*"
 
 [dev-packages]
 pytest = "*"

@@ -3,11 +3,16 @@ AudioWrangler {
     min-width: 50;
     margin: 1;
     padding: 1;
+    background: $boost;
     # background: red;
     height: 5;
-    # content-align: center middle;
     text-opacity: 60%;
-    # background: $boost;
+}
+
+TimeDisplay {
+    content-align: center middle;
+    height: 3;
+    background: $boost;
 }
 
 # nesting

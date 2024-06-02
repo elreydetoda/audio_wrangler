@@ -3,12 +3,13 @@
 from pathlib import Path
 import re
 from time import monotonic
+from argparse import ArgumentParser
 
 from sqlmodel import Session
 from whisper.utils import get_writer
 from textual import on
 from textual.app import App
-from textual.widgets import Header, Footer, Button, Static
+from textual.widgets import Header, Footer, Button, Static, Label
 from textual.containers import ScrollableContainer
 from textual.reactive import reactive
 
@@ -99,11 +100,17 @@ class AudioWrangler(Static):
 
 
 class AudioWranglerApp(App):
+
+    def __init__(self, *args, api_host: str, audio_dir: Path, **kwargs):
+        self._api_host = api_host
+        self._audio_dir = audio_dir
+        super().__init__(*args, **kwargs)
+
     BINDINGS = [
         # ("keybinding", "function_name", "description")
         ("d", "toggle_dark_mode", "Toggle dark mode"),
         ("a", "add_audiowrangler", "Add"),
-        ("r", "remove_audiowrangler", "Add"),
+        ("r", "remove_audiowrangler", "Remove"),
         # actual function needs to have a prefix of action_<above_name>
     ]
 
@@ -113,6 +120,8 @@ class AudioWranglerApp(App):
         yield Header()
         yield Footer()
         with ScrollableContainer(id="wranglers"):
+            yield Label(self._api_host)
+            yield Label(str(self._audio_dir))
             yield AudioWrangler()
             yield AudioWrangler()
 
@@ -132,6 +141,16 @@ class AudioWranglerApp(App):
 
 
 def main():
+    parser = ArgumentParser()
+    parser.add_argument(
+        "api_endpoint", help="API endpoint for the speech-to-text service"
+    )
+    parser.add_argument(
+        "audio_dir",
+        type=Path,
+        help="Directory containing the audio files to be processed",
+    )
+    args = parser.parse_args()
     # all_files = Path("/tmp/").glob("*")
     # wsp = WhisperInterface()
     # index = IndexingInterface()
@@ -157,7 +176,7 @@ def main():
     # session.commit()
     # print(index.bulk_validate(session, [input_file]))
     # print(index.get_index(session, input_file))
-    AudioWranglerApp().run()
+    AudioWranglerApp(api_host=args.api_endpoint, audio_dir=args.audio_dir).run()
 
 
 if __name__ == "__main__":

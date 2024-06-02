@@ -1,8 +1,9 @@
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Dict, List, Literal, Optional
-import uuid
+import uuid, asyncio
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Request, status
+from contextlib import asynccontextmanager
 from starlette.requests import ClientDisconnect
 from streaming_form_data import StreamingFormDataParser
 from streaming_form_data.targets import FileTarget, ValueTarget
@@ -15,14 +16,31 @@ from pydantic.dataclasses import dataclass as py_dataclass
 # pylint: disable=import-error
 from whisper_interface import WhisperInterface
 
+# initially based on this article: https://medium.com/@fatikir15/decoding-speech-privately-a-journey-with-whisper-streamlit-and-fastapi-4ecba1650efb
 
 # https://stackoverflow.com/a/73443824
-
 MAX_FILE_SIZE = 1024 * 1024 * 1024 * 5  # = 5GB
 MAX_REQUEST_BODY_SIZE = MAX_FILE_SIZE + 1024
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    asyncio.create_task(whisper_worker())
+
+    # start the app
+    yield
+
+    for task in tasks.values():
+        if task.path.exists():
+            task.path.unlink()
+
+
+app = FastAPI(lifespan=lifespan)
 wsp = WhisperInterface()
+## ChatGPT helped with the locking logic
+# Task queue and lock
+task_queue = asyncio.Queue()
+processing_lock = asyncio.Lock()
 
 
 @py_dataclass
@@ -58,18 +76,28 @@ class MaxBodySizeValidator:
             raise MaxBodySizeException(body_len=self.body_len)
 
 
-def whisper_wrapper(task_id: str):
-    current_task = tasks.get(task_id)
-    current_task.state = "processing"
-    # process_file = True
-    # while process_file:
-    try:
-        transcription = wsp.transcribe(current_task.path)
-        current_task.transcription = transcription
-        current_task.state = "completed"
-    except Exception as exc:
-        current_task.error = {"error": f"Error type: {type(exc)}\nError output: {exc}"}
-        current_task.state = "failed"
+async def whisper_manager(task_id: str):
+    async with processing_lock:
+        current_task = tasks.get(task_id)
+        current_task.state = "processing"
+        try:
+            transcription = await asyncio.to_thread(wsp.transcribe, current_task.path)
+            current_task.transcription = transcription
+            current_task.state = "completed"
+        except Exception as exc:
+            current_task.error = {
+                "error": f"Error type: {type(exc)}\nError output: {exc}"
+            }
+            current_task.state = "failed"
+
+
+async def whisper_worker():
+    while True:
+        # Waits here until an item is available
+        job_id: str = await task_queue.get()
+        await whisper_manager(job_id)
+        # Signal that the task is complete
+        task_queue.task_done()
 
 
 @app.post("/transcribe")
@@ -121,7 +149,8 @@ async def upload(background_tasks: BackgroundTasks, request: Request):
     print(f"Uploaded to: {filepath}")
     task_id = str(uuid.uuid4())
     tasks[task_id] = Task(state="queued", filename=filename, path=Path(filepath))
-    background_tasks.add_task(whisper_wrapper, task_id)
+    # Add the job to the queue
+    await task_queue.put(task_id)
 
     return {"message": f"Successfuly uploaded {filename}"}
 

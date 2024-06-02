@@ -1,0 +1,24 @@
+AudioWrangler {
+    layout: horizontal;
+    min-width: 50;
+    margin: 1;
+    padding: 1;
+    # background: red;
+    height: 5;
+    # content-align: center middle;
+    text-opacity: 60%;
+    # background: $boost;
+}
+
+# nesting
+# AudioWrangler Button {
+#     display: none;
+# }
+
+.hidden {
+    display: none;
+}
+
+# #wranglers {
+#     background: blue;
+# }

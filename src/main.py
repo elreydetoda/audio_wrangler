@@ -5,6 +5,10 @@ import re
 
 from sqlmodel import Session
 from whisper.utils import get_writer
+from textual import on
+from textual.app import App
+from textual.widgets import Header, Footer, Button, Static
+from textual.containers import ScrollableContainer
 
 from models.db_models import FilesMetadata
 from backend.whisper_interface import WhisperInterface
@@ -33,6 +37,38 @@ def process_transcription(wsp: WhisperInterface, input_file: Path) -> Path:
     return modify_text_output(input_file.with_suffix(".txt"))
 
 
+class AudioWrangler(Static):
+    # handling messages in textual
+    @on(Button.Pressed, "#first")
+    def first_pressed_method(self):
+        self.app.exit()
+
+    @on(Button.Pressed, "#second")
+    def second_pressed_method(self):
+        self.add_class("hidden")
+
+    def compose(self):
+        yield Button("First", id="first")
+        yield Button("Second", id="second")
+        # yield Button("Third", variant="error", id="stop", classes="hidden")
+
+
+class AudioWranglerApp(App):
+    BINDINGS = [
+        # ("keybinding", "function_name", "description")
+        # ("d","toggle_dark_mode", "Toggle dark mode")
+    ]
+
+    CSS_PATH = "frontend/style.tcss"
+
+    def compose(self):
+        yield Header()
+        yield Footer()
+        with ScrollableContainer(id="wranglers"):
+            yield AudioWrangler()
+            yield AudioWrangler()
+
+
 def main():
     # all_files = Path("/tmp/").glob("*")
     # wsp = WhisperInterface()
@@ -49,16 +85,17 @@ def main():
     #             continue
 
     #         print(f"Processing {file}")
-    input_file = Path("tests/assets/240530_1653.wav")
-    print(input_file)
-    wsp = WhisperInterface()
-    print(process_transcription(wsp, input_file))
-    index = IndexingInterface()
-    session = Session(index.engine)
-    session.add(FilesMetadata(filename=str(input_file), processed=True))
-    session.commit()
-    print(index.bulk_validate(session, [input_file]))
-    print(index.get_index(session, input_file))
+    # input_file = Path("tests/assets/240530_1653.wav")
+    # print(input_file)
+    # wsp = WhisperInterface()
+    # print(process_transcription(wsp, input_file))
+    # index = IndexingInterface()
+    # session = Session(index.engine)
+    # session.add(FilesMetadata(filename=str(input_file), processed=True))
+    # session.commit()
+    # print(index.bulk_validate(session, [input_file]))
+    # print(index.get_index(session, input_file))
+    AudioWranglerApp().run()
 
 
 if __name__ == "__main__":

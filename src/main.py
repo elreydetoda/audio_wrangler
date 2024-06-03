@@ -144,13 +144,20 @@ class AudioWrangler(Static):
 
 
 class AudioDirectoryTree(DirectoryTree):
-    # def filter_paths(self, paths: Iterable[Path]) -> Iterable[Path]:
-    #     return [
-    #         path
-    #         for path in paths
-    #         if path.suffix.strip(".") in COMMON_AUDIO_N_VIDEO_FORMATS
-    #     ]
-    """"""
+    # def on_mount(self):
+    # self.root.add_leaf("**All Files**", "ALL_FILES")
+
+    def filter_paths(self, paths: Iterable[Path]) -> Iterable[Path]:
+        return self.filter_media_files(paths)
+
+    @staticmethod
+    def filter_media_files(paths: Iterable[Path], only_files=False) -> Iterable[Path]:
+        return [
+            path
+            for path in paths
+            if path.suffix.strip(".") in COMMON_AUDIO_N_VIDEO_FORMATS
+            or (not only_files and path.is_dir())
+        ]
 
 
 class AudioWranglerIndexer(Static):
@@ -163,7 +170,9 @@ class AudioWranglerIndexer(Static):
 
     def compose(self):
         with Grid(id="indexer-grid"):
-            yield AudioDirectoryTree(self._audio_dir, id="indexer-directory-tree")
+            with Horizontal(id="indexer-left"):
+                yield AudioDirectoryTree(self._audio_dir, id="indexer-directory-tree")
+                yield Button("Add All Files", id="add-all-files")
             yield DataTable(id="indexer-table")
 
     def on_mount(self):
@@ -175,8 +184,8 @@ class AudioWranglerIndexer(Static):
 
     @on(AudioDirectoryTree.FileSelected, "#indexer-directory-tree")
     def start_file_processing(self, event: AudioDirectoryTree.FileSelected) -> None:
+        dt = self.query_one(DataTable)
         if event.path.is_file():
-            dt = self.query_one(DataTable)
             file_path_str = str(event.path)
             try:
                 dt.add_row(
@@ -187,6 +196,21 @@ class AudioWranglerIndexer(Static):
             except DuplicateKey:
                 dt.scroll_visible(file_path_str)
                 logging.debug("File %s already in table", file_path_str)
+
+    @on(Button.Pressed, "#add-all-files")
+    def add_all_files(self):
+        dt = self.query_one(DataTable)
+        all_files = set(self._audio_dir.glob("**/*"))
+        all_files.update(self._audio_dir.glob("./*"))
+
+        files = AudioDirectoryTree.filter_media_files(
+            all_files,
+            only_files=True,
+        )
+        for filez in files:
+            dt.add_row(*(str(filez), "no"), key=str(filez))
+
+        self.query_one("#add-all-files").disabled = True
 
     # def watch_not_indexed_file(self):
     #     logging.debug("########## REACHED ##########")

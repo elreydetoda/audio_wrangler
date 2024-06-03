@@ -111,8 +111,9 @@ Label {
     background: red;
     grid-size: 100 1;
     grid-gutter: 1 2;
+    margin: 1;
 
-    & #indexer-directory-tree {
+    & #indexer-left {
         background: yellow;
         column-span: 45;
     }
@@ -121,4 +122,8 @@ Label {
         background: green;
         column-span: 55;
     }
+}
+
+#indexer-directory-tree {
+    padding: 1 2 1 2;
 }

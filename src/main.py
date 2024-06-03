@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
+import logging
 from pathlib import Path
 import re
 from time import monotonic
 from argparse import ArgumentParser
-from typing import Iterable
+from typing import Iterable, Set
 
 from sqlmodel import Session
 from whisper.utils import get_writer
@@ -18,7 +19,9 @@ from textual.widgets import (
     Label,
     ContentSwitcher,
     DirectoryTree,
+    DataTable,
 )
+from textual.widgets.data_table import DuplicateKey
 from textual.containers import (
     ScrollableContainer,
     Grid,
@@ -27,6 +30,7 @@ from textual.containers import (
     VerticalScroll,
 )
 from textual.reactive import reactive
+from textual.logging import TextualHandler
 
 from models.db_models import FilesMetadata
 from backend.whisper_interface import WhisperInterface
@@ -58,6 +62,8 @@ COMMON_AUDIO_N_VIDEO_FORMATS = {
     "amr",
     "aiff",
 }
+
+logging.basicConfig(level="NOTSET", handlers=[TextualHandler()])
 
 
 def modify_text_output(file_written: Path) -> None:
@@ -138,12 +144,54 @@ class AudioWrangler(Static):
 
 
 class AudioDirectoryTree(DirectoryTree):
-    def filter_paths(self, paths: Iterable[Path]) -> Iterable[Path]:
-        return [
-            path
-            for path in paths
-            if path.suffix.strip(".") in COMMON_AUDIO_N_VIDEO_FORMATS
-        ]
+    # def filter_paths(self, paths: Iterable[Path]) -> Iterable[Path]:
+    #     return [
+    #         path
+    #         for path in paths
+    #         if path.suffix.strip(".") in COMMON_AUDIO_N_VIDEO_FORMATS
+    #     ]
+    """"""
+
+
+class AudioWranglerIndexer(Static):
+
+    # not_indexed_file: reactive[Set[Path]] = reactive(set())
+
+    def __init__(self, *args, audio_dir: Path, **kwargs):
+        self._audio_dir = audio_dir
+        super().__init__(*args, **kwargs)
+
+    def compose(self):
+        with Grid(id="indexer-grid"):
+            yield AudioDirectoryTree(self._audio_dir, id="indexer-directory-tree")
+            yield DataTable(id="indexer-table")
+
+    def on_mount(self):
+        table = self.query_one(DataTable)
+        table.add_columns(*("File Path", "Indexed"))
+        # self.update_table = self.set_interval(
+        #     5,
+        # )
+
+    @on(AudioDirectoryTree.FileSelected, "#indexer-directory-tree")
+    def start_file_processing(self, event: AudioDirectoryTree.FileSelected) -> None:
+        if event.path.is_file():
+            dt = self.query_one(DataTable)
+            file_path_str = str(event.path)
+            try:
+                dt.add_row(
+                    *(file_path_str, "no"),
+                    key=file_path_str,
+                )
+                logging.debug("File %s added to table", file_path_str)
+            except DuplicateKey:
+                dt.scroll_visible(file_path_str)
+                logging.debug("File %s already in table", file_path_str)
+
+    # def watch_not_indexed_file(self):
+    #     logging.debug("########## REACHED ##########")
+    #     fmt_str = "\n".join([str(filez) for filez in self.not_indexed_file])
+    #     self.query_one(DataTable).add_row()
 
 
 class AudioWranglerApp(App):
@@ -156,13 +204,13 @@ class AudioWranglerApp(App):
     BINDINGS = [
         # ("keybinding", "function_name", "description")
         ("d", "toggle_dark_mode", "Toggle dark mode"),
+        ("q", "exit", "Exit"),
         # ("a", "add_audiowrangler", "Add"),
         # ("r", "remove_audiowrangler", "Remove"),
         # actual function needs to have a prefix of action_<above_name>
     ]
 
     CSS_PATH = "frontend/style.tcss"
-    indexer_text = reactive("Data View: Indexer")
 
     def compose(self):
         yield Header()
@@ -191,15 +239,15 @@ class AudioWranglerApp(App):
                 )
             with ContentSwitcher(id="data-view", initial="indexer"):
                 with Horizontal(id="indexer"):
-                    yield AudioDirectoryTree(
-                        self._audio_dir, id="indexer-directory-tree"
-                    )
-                    yield Label("Data View: Indexer", id="indexer-text")
+                    yield AudioWranglerIndexer(audio_dir=self._audio_dir)
                 yield Label("Data View: Current Jobs", id="current-jobs")
                 yield Label("Data View: File Metadata", id="metadata")
 
     def action_toggle_dark_mode(self):
         self.dark = not self.dark
+
+    def action_exit(self):
+        self.exit()
 
     # def action_add_audiowrangler(self):
     #     audiowrangler = AudioWrangler()
@@ -215,13 +263,6 @@ class AudioWranglerApp(App):
     def update_content_switcher(self, event: Button.Pressed) -> None:
         self.query_one(ContentSwitcher).current = event.button.id
 
-    @on(AudioDirectoryTree.FileSelected, "#indexer-directory-tree")
-    def start_file_processing(self, event: AudioDirectoryTree.FileSelected) -> None:
-        self.indexer_text = event.path.absolute()
-
-    def watch_indexer_text(self):
-        self.query_one("#indexer-text", Label).update(str(self.indexer_text))
-
 
 def main():
     parser = ArgumentParser()
@@ -236,7 +277,7 @@ def main():
     args = parser.parse_args()
     # all_files = Path("/tmp/").glob("*")
     # wsp = WhisperInterface()
-    # index = IndexingInterface()
+    index_obj = IndexingInterface()
 
     # while all_files:
     #     batch = list(islice(all_files, 10))

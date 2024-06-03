@@ -106,3 +106,19 @@ ContentSwitcher {
 Label {
     background: orange;
 }
+
+#indexer-grid {
+    background: red;
+    grid-size: 100 1;
+    grid-gutter: 1 2;
+
+    & #indexer-directory-tree {
+        background: yellow;
+        column-span: 45;
+    }
+
+    & #indexer-table {
+        background: green;
+        column-span: 55;
+    }
+}

@@ -127,3 +127,16 @@ Label {
 #indexer-directory-tree {
     padding: 1 2 1 2;
 }
+
+#jobs {
+}
+#jobs-new {
+    margin: 1;
+    background: orange;
+    & Container {
+        align: center bottom;
+    }
+}
+#jobs-running-table {
+    margin: 1;
+}

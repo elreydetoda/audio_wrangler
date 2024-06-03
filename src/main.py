@@ -5,9 +5,10 @@ from pathlib import Path
 import re
 from time import monotonic
 from argparse import ArgumentParser
-from typing import Iterable, Set
+from typing import Dict, Iterable, Set
+from asyncio import create_task
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 from whisper.utils import get_writer
 from textual import on
 from textual.app import App
@@ -28,9 +29,11 @@ from textual.containers import (
     Container,
     Horizontal,
     VerticalScroll,
+    Vertical,
 )
 from textual.reactive import reactive
 from textual.logging import TextualHandler
+from httpx import AsyncClient
 
 from models.db_models import FilesMetadata
 from backend.whisper_interface import WhisperInterface
@@ -265,6 +268,79 @@ class AudioWranglerIndexer(Static):
     #     self.query_one(DataTable).add_row()
 
 
+class AudioWrangerJobs(Static):
+    def __init__(
+        self,
+        *args,
+        index_obj: IndexingInterface,
+        api_host: str,
+        **kwargs,
+    ):
+        self._index_obj = index_obj
+        self._api_host = api_host
+        self._session = Session(self._index_obj.engine)
+        super().__init__(*args, **kwargs)
+
+    def compose(self):
+        with Horizontal(id="jobs"):
+            with Vertical(id="jobs-new"):
+                yield DataTable(id="jobs-new-table")
+                with Container():
+                    yield Button("Start Jobs", id="start-jobs")
+            yield DataTable(id="jobs-running-table")
+
+    def on_mount(self):
+        new_table = self.query_one("#jobs-new-table", DataTable)
+        new_table.add_columns(*("File Path", "Processed"))
+        self.check_new_jobs()
+        self.set_interval(5, self.check_new_jobs)
+
+        current_jobs_table = self.query_one("#jobs-running-table", DataTable)
+        current_jobs_table.add_columns(*("File Name", "State", "Task ID"))
+        self.launch_async_task()
+        self.set_interval(5, self.launch_async_task)
+
+    def check_new_jobs(self) -> None:
+        new_table = self.query_one("#jobs-new-table", DataTable)
+        new_jobs = self._session.exec(
+            select(FilesMetadata).where(FilesMetadata.processed == False)
+        ).all()
+        for new_job in new_jobs:
+            try:
+                new_table.add_row(*(new_job.filename, "no"), key=new_job.filename)
+            except DuplicateKey:
+                logging.debug("File %s already in table", new_job.filename)
+
+    def launch_async_task(self) -> None:
+        create_task(self.check_current_jobs())
+
+    async def check_current_jobs(self) -> None:
+        url = f"{self._api_host}/tasks"
+        async with AsyncClient() as client:
+            # this is tasks in: src/backend/app.py
+            results: Dict[
+                str,
+                Dict[
+                    str,
+                    str
+                    | Dict[
+                        str,
+                        str | list,
+                    ],
+                ],
+            ] = (await client.get(url)).json()
+
+        current_jobs_table = self.query_one("#jobs-running-table", DataTable)
+        current_jobs_table.clear()
+        if results:
+            # current_jobs_table.add_columns(*("File Name", "State", "Task ID"))
+            for k, v in results.items():
+                try:
+                    current_jobs_table.add_row(*(v["filename"], v["state"], k), key=k)
+                except DuplicateKey:
+                    logging.debug("Task %s already in table", k)
+
+
 class AudioWranglerApp(App):
 
     def __init__(
@@ -322,7 +398,11 @@ class AudioWranglerApp(App):
                         audio_dir=self._audio_dir,
                         index_obj=self._index_obj,
                     )
-                yield Label("Data View: Current Jobs", id="current-jobs")
+                yield AudioWrangerJobs(
+                    id="current-jobs",
+                    index_obj=self._index_obj,
+                    api_host=self._api_host,
+                )
                 yield Label("Data View: File Metadata", id="metadata")
 
     def action_toggle_dark_mode(self):

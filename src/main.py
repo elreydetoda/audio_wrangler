@@ -34,6 +34,7 @@ from textual.containers import (
 from textual.reactive import reactive
 from textual.logging import TextualHandler
 from httpx import AsyncClient
+from sqlmodel import update
 
 from models.db_models import FilesMetadata
 from backend.whisper_interface import WhisperInterface
@@ -229,6 +230,7 @@ class AudioWranglerIndexer(Static):
                     FilesMetadata(filename=file_path_str, processed=False)
                 )
                 self._session.commit()
+                self._session.close()
                 dt.add_row(
                     *(file_path_str, "yes"),
                     key=file_path_str,
@@ -259,6 +261,7 @@ class AudioWranglerIndexer(Static):
             self._session.add(FilesMetadata(filename=str(filez), processed=False))
 
         self._session.commit()
+        self._session.close()
 
         self.query_one("#add-all-files").disabled = True
 
@@ -286,7 +289,7 @@ class AudioWrangerJobs(Static):
             with Vertical(id="jobs-new"):
                 yield DataTable(id="jobs-new-table")
                 with Container():
-                    yield Button("Start Jobs", id="start-jobs")
+                    yield Button("Start Jobs", id="jobs-start")
             yield DataTable(id="jobs-running-table")
 
     def on_mount(self):
@@ -339,6 +342,39 @@ class AudioWrangerJobs(Static):
                     current_jobs_table.add_row(*(v["filename"], v["state"], k), key=k)
                 except DuplicateKey:
                     logging.debug("Task %s already in table", k)
+
+    @on(Button.Pressed, "#jobs-start")
+    def start_jobs(self) -> None:
+        logging.debug("Starting jobs")
+        new_table = self.query_one("#jobs-new-table", DataTable)
+        files = self._session.exec(
+            select(FilesMetadata).where(FilesMetadata.processed == False)
+        ).all()
+        for filez in files:
+            create_task(self.start_job(Path(filez.filename)))
+        # for row_key in new_table.rows:
+        #     logging.debug("Row key: %s", str(row_key))
+        #     for row in new_table.get_row(row_key):
+        #         logging.debug("Row: %s", "\n".join(row))
+        #         if row[1] == "no":
+        #             create_task(self.start_job(new_table, Path(row[0])))
+
+    async def start_job(self, file_path: Path) -> None:
+        url = f"{self._api_host}/transcribe"
+        headers = {"Filename": file_path.name}
+        files = {"file": (file_path.name, open(file_path.absolute(), "rb"))}
+
+        async with AsyncClient() as client:
+            response = await client.post(url, headers=headers, files=files)
+
+        if response.status_code == 200:
+            self._session.exec(
+                update(FilesMetadata)
+                .where(FilesMetadata.filename == file_path)
+                .values(processed=True)
+            )
+            self._session.commit()
+            self._session.close()
 
 
 class AudioWranglerApp(App):

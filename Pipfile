@@ -4,12 +4,12 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-requests = "*"
 sqlmodel = "*"
 openai-whisper = "*"
 fastapi = {extras = ["all"], version = "*"}
 streaming-form-data = "*"
 textual = "*"
+httpx = "*"
 
 [dev-packages]
 pytest = "*"

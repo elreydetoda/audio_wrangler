@@ -144,19 +144,41 @@ class AudioWrangler(Static):
 
 
 class AudioDirectoryTree(DirectoryTree):
-    # def on_mount(self):
-    # self.root.add_leaf("**All Files**", "ALL_FILES")
 
-    def filter_paths(self, paths: Iterable[Path]) -> Iterable[Path]:
+    def __init__(
+        self,
+        *args,
+        session: Session,
+        in_db=True,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self._session = session
+        self._in_db = in_db
+
+    def filter_paths(
+        self,
+        paths: Iterable[Path],
+        only_files=False,
+    ) -> Iterable[Path]:
+
+        paths = {
+            path
+            for path in paths
+            if not IndexingInterface.get_index(self._session, path)
+        }
+        if only_files:
+            paths = {path for path in paths if path.is_file()}
         return self.filter_media_files(paths)
 
     @staticmethod
-    def filter_media_files(paths: Iterable[Path], only_files=False) -> Iterable[Path]:
+    def filter_media_files(
+        paths: Iterable[Path],
+    ) -> Iterable[Path]:
         return [
             path
             for path in paths
-            if path.suffix.strip(".") in COMMON_AUDIO_N_VIDEO_FORMATS
-            or (not only_files and path.is_dir())
+            if path.suffix.strip(".") in COMMON_AUDIO_N_VIDEO_FORMATS or path.is_dir()
         ]
 
 
@@ -164,14 +186,26 @@ class AudioWranglerIndexer(Static):
 
     # not_indexed_file: reactive[Set[Path]] = reactive(set())
 
-    def __init__(self, *args, audio_dir: Path, **kwargs):
+    def __init__(
+        self,
+        *args,
+        audio_dir: Path,
+        index_obj: IndexingInterface,
+        **kwargs,
+    ):
         self._audio_dir = audio_dir
+        self._index_obj = index_obj
+        self._session = Session(self._index_obj.engine)
         super().__init__(*args, **kwargs)
 
     def compose(self):
         with Grid(id="indexer-grid"):
             with Horizontal(id="indexer-left"):
-                yield AudioDirectoryTree(self._audio_dir, id="indexer-directory-tree")
+                yield AudioDirectoryTree(
+                    self._audio_dir,
+                    session=self._session,
+                    id="indexer-directory-tree",
+                )
                 yield Button("Add All Files", id="add-all-files")
             yield DataTable(id="indexer-table")
 
@@ -188,8 +222,12 @@ class AudioWranglerIndexer(Static):
         if event.path.is_file():
             file_path_str = str(event.path)
             try:
+                self._session.add(
+                    FilesMetadata(filename=file_path_str, processed=False)
+                )
+                self._session.commit()
                 dt.add_row(
-                    *(file_path_str, "no"),
+                    *(file_path_str, "yes"),
                     key=file_path_str,
                 )
                 logging.debug("File %s added to table", file_path_str)
@@ -200,15 +238,24 @@ class AudioWranglerIndexer(Static):
     @on(Button.Pressed, "#add-all-files")
     def add_all_files(self):
         dt = self.query_one(DataTable)
+        dt.clear()
+        self.on_mount()
         all_files = set(self._audio_dir.glob("**/*"))
         all_files.update(self._audio_dir.glob("./*"))
 
-        files = AudioDirectoryTree.filter_media_files(
+        files = self.query_one(AudioDirectoryTree).filter_paths(
             all_files,
             only_files=True,
         )
+        # files = AudioDirectoryTree.filter_media_files(
+        #     all_files,
+        #     only_files=True,
+        # )
         for filez in files:
-            dt.add_row(*(str(filez), "no"), key=str(filez))
+            dt.add_row(*(str(filez), "yes"), key=str(filez))
+            self._session.add(FilesMetadata(filename=str(filez), processed=False))
+
+        self._session.commit()
 
         self.query_one("#add-all-files").disabled = True
 
@@ -220,9 +267,17 @@ class AudioWranglerIndexer(Static):
 
 class AudioWranglerApp(App):
 
-    def __init__(self, *args, api_host: str, audio_dir: Path, **kwargs):
+    def __init__(
+        self,
+        *args,
+        api_host: str,
+        audio_dir: Path,
+        index_obj: IndexingInterface,
+        **kwargs,
+    ):
         self._api_host = api_host
         self._audio_dir = audio_dir
+        self._index_obj = index_obj
         super().__init__(*args, **kwargs)
 
     BINDINGS = [
@@ -263,7 +318,10 @@ class AudioWranglerApp(App):
                 )
             with ContentSwitcher(id="data-view", initial="indexer"):
                 with Horizontal(id="indexer"):
-                    yield AudioWranglerIndexer(audio_dir=self._audio_dir)
+                    yield AudioWranglerIndexer(
+                        audio_dir=self._audio_dir,
+                        index_obj=self._index_obj,
+                    )
                 yield Label("Data View: Current Jobs", id="current-jobs")
                 yield Label("Data View: File Metadata", id="metadata")
 
@@ -324,7 +382,11 @@ def main():
     # session.commit()
     # print(index.bulk_validate(session, [input_file]))
     # print(index.get_index(session, input_file))
-    AudioWranglerApp(api_host=args.api_endpoint, audio_dir=args.audio_dir).run()
+    AudioWranglerApp(
+        api_host=args.api_endpoint,
+        audio_dir=args.audio_dir,
+        index_obj=index_obj,
+    ).run()
 
 
 if __name__ == "__main__":

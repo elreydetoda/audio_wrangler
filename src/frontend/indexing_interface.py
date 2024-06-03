@@ -22,8 +22,9 @@ class IndexingInterface:
             return str(data_convert)
         return data_convert
 
-    def get_index(self, session: Session, file_path):
-        file_path = self._convert_data(file_path)
+    @classmethod
+    def get_index(cls, session: Session, file_path):
+        file_path = cls._convert_data(file_path)
         return session.exec(
             select(FilesMetadata).where(FilesMetadata.filename == file_path)
         ).first()
@@ -50,17 +51,17 @@ class IndexingInterface:
             f"Not all files are in the database:\n{'\n'.join(not_in_results)}"
         )
 
-    def add_to_index(
-        self,
-        session: Session,
-        file_path: Path,
-        transcribed: bool,
-    ) -> None:
-        file_path = self._convert_data(file_path)
-        session.add(
-            FilesMetadata(
-                filename=file_path,
-                processed=transcribed,
-            )
-        )
-        session.commit()
+    # def add_to_index(
+    #     self,
+    #     session: Session,
+    #     file_path: Path,
+    #     transcribed: bool,
+    # ) -> None:
+    #     file_path = self._convert_data(file_path)
+    #     session.add(
+    #         FilesMetadata(
+    #             filename=file_path,
+    #             processed=transcribed,
+    #         )
+    #     )
+    #     session.commit()
